@@ -3,7 +3,6 @@
 #
 # Copyright (c) 2020 Great Scott Gadgets <info@greatscottgadgets.com>
 # SPDX-License-Identifier: BSD-3-Clause
-
 """ Standard, full-gateware control request handlers. """
 
 import unittest
@@ -125,7 +124,6 @@ class StandardRequestHandler(USBRequestHandler):
                 with m.State('IDLE'):
 
                     # If we've received a new setup packet, handle it.
-                    # TODO: limit this to standard requests
                     with m.If(setup.received):
 
                         # Select which standard packet we're going to handler.

@@ -3,6 +3,23 @@ import sys
 
 from setuptools import setup, find_packages
 
+
+# Provide our default install requirements.
+install_requirements = [
+    'pyusb',
+    'nmigen @ git+https://github.com/nmigen/nmigen.git',
+    'nmigen_boards @ git+https://github.com/nmigen/nmigen-boards.git',
+    'pyvcd',
+    'usb_protocol @ git+https://github.com/usb-tools/python-usb-protocol.git',
+    'libusb1',
+]
+
+# On ReadTheDocs don't enforce requirements; we'll use requirements.txt
+# to provision the documentation builder.
+if os.environ.get('READTHEDOCS') == 'True':
+    install_requirements = []
+
+
 setup(
 
     # Vitals
@@ -25,7 +42,7 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     python_requires="~=3.7",
-    install_requires=['pyusb', 'nmigen', 'nmigen_boards', 'pyvcd', 'usb_protocol', 'libusb1'],
+    install_requires=install_requirements,
     setup_requires=['setuptools', 'setuptools_scm'],
     entry_points= {
         'console_scripts': [
@@ -34,7 +51,8 @@ setup(
     },
 
     extras_require = {
-        'console_tests': ["prompt_toolkit"]
+        'console_tests': ["prompt_toolkit"],
+        'serial_examples': ["pyserial~=3.4"]
     },
 
     # Metadata
