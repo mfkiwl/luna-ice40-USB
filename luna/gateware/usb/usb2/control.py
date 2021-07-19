@@ -75,16 +75,15 @@ class USBControlEndpoint(Elaboratable):
         self._request_handlers.append(request_handler)
 
 
-    def add_standard_request_handlers(self, descriptors: DeviceDescriptorCollection):
+    def add_standard_request_handlers(self, descriptors: DeviceDescriptorCollection, **kwargs):
         """ Adds a handlers for the standard USB requests.
 
         This will handle all Standard-type requests; so any additional request handlers
         must not handle Standard requests.
 
-        Parameters:
-
+        Parameters will be passed on to StandardRequestHandler.
         """
-        handler = StandardRequestHandler(descriptors, max_packet_size=self._max_packet_size)
+        handler = StandardRequestHandler(descriptors, max_packet_size=self._max_packet_size, **kwargs)
         self._request_handlers.append(handler)
 
 
@@ -265,7 +264,7 @@ class USBControlEndpoint(Elaboratable):
                     ]
 
                 # Once we get an IN token, we should move on to the STATUS stage. [USB2, 8.5.3]
-                with m.If(interface.tokenizer.new_token & interface.tokenizer.is_in):
+                with m.If(endpoint_targeted & interface.tokenizer.new_token & interface.tokenizer.is_in):
                     m.next = 'STATUS_IN'
 
 

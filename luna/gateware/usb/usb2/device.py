@@ -139,6 +139,7 @@ class USBDevice(Elaboratable):
         self.new_frame         = Signal()
         self.reset_detected    = Signal()
 
+        self.speed             = Signal(2)
         self.suspended         = Signal()
         self.tx_activity_led   = Signal()
         self.rx_activity_led   = Signal()
@@ -174,14 +175,13 @@ class USBDevice(Elaboratable):
         control_endpoint = USBControlEndpoint(utmi=self.utmi)
         self.add_endpoint(control_endpoint)
 
+        return control_endpoint
 
-    def add_standard_control_endpoint(self, descriptors: DeviceDescriptorCollection):
+
+    def add_standard_control_endpoint(self, descriptors: DeviceDescriptorCollection, **kwargs):
         """ Adds a control endpoint with standard request handlers to the device.
 
-        Parameters
-        ----------
-        descriptors: DeviceDescriptorCollection
-            The descriptors to use for this device.
+        Parameters will be passed on to StandardRequestHandler.
 
         Return value
         ------------
@@ -190,7 +190,7 @@ class USBDevice(Elaboratable):
 
         # Create our endpoint, and add standard descriptors to it.
         control_endpoint = USBControlEndpoint(utmi=self.utmi)
-        control_endpoint.add_standard_request_handlers(descriptors)
+        control_endpoint.add_standard_request_handlers(descriptors, **kwargs)
         self.add_endpoint(control_endpoint)
 
         return control_endpoint
@@ -402,13 +402,11 @@ class USBDevice(Elaboratable):
                 m.d.usb += self.microframe_number.eq(self.microframe_number + 1)
 
 
-
-
         #
         # Device-state outputs.
         #
-
         m.d.comb += [
+            self.speed            .eq(reset_sequencer.current_speed),
             self.suspended        .eq(reset_sequencer.suspended),
 
             self.sof_detected     .eq(token_detector.interface.new_frame),
@@ -641,7 +639,8 @@ try:
             #
             # I/O port
             #
-            self.connect = Signal(reset=1)
+            self.connect   = Signal(reset=1)
+            self.bus_reset = Signal()
 
 
             #
@@ -653,9 +652,19 @@ try:
                 Set this bit to '1' to allow the associated USB device to connect to a host.
             """)
 
+            self._speed = regs.csr(2, "r", desc="""
+                Indicates the current speed of the USB device. 0 indicates High; 1 => Full,
+                2 => Low, and 3 => SuperSpeed (incl SuperSpeed+).
+            """)
+
+            self._reset_irq = self.event(name="reset", desc="""
+                Interrupt that occurs when a USB bus reset is received.
+            """)
+
             # Wishbone connection.
             self._bridge    = self.bridge(data_width=32, granularity=8, alignment=2)
             self.bus        = self._bridge.bus
+            self.irq        = self._bridge.irq
 
 
         def attach(self, device: USBDevice):
@@ -671,7 +680,9 @@ try:
                 The :class:`USBDevice` object to be controlled.
             """
             return [
-                device.connect  .eq(self.connect)
+                device.connect      .eq(self.connect),
+                self.bus_reset      .eq(device.reset_detected),
+                self._speed.r_data  .eq(device.speed)
             ]
 
 
@@ -683,6 +694,9 @@ try:
             m.d.comb += self.connect.eq(self._connect.r_data)
             with m.If(self._connect.w_stb):
                 m.d.usb += self._connect.r_data.eq(self._connect.w_data)
+
+            # Reset-detection event.
+            m.d.comb += self._reset_irq.stb.eq(self.bus_reset)
 
             return m
 
