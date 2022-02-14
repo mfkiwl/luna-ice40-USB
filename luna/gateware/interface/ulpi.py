@@ -1,4 +1,4 @@
-# nmigen: UnusedElaboratable=no
+# amaranth: UnusedElaboratable=no
 #
 # This file is part of LUNA.
 #
@@ -9,10 +9,10 @@
 
 import unittest
 
-from nmigen         import Signal, Module, Cat, Elaboratable, ClockSignal, \
+from amaranth       import Signal, Module, Cat, Elaboratable, ClockSignal, \
                            Record, ResetSignal, Const
-from nmigen.hdl.ast import Rose, Fell, Past
-from nmigen.hdl.rec import Record, DIR_FANIN, DIR_FANOUT, DIR_NONE
+from amaranth.hdl.ast import Rose, Fell, Past
+from amaranth.hdl.rec import Record, DIR_FANIN, DIR_FANOUT, DIR_NONE
 
 from ..utils.io     import delay
 from ..test         import LunaGatewareTestCase, usb_domain_test_case, sync_test_case
@@ -235,8 +235,22 @@ class ULPIRegisterWindow(Elaboratable):
                 with m.Elif(self.ulpi_next):
                     m.d.usb += [
                         self.ulpi_data_out.eq(0),
-                        self.ulpi_out_req.eq(0),
                         self.ulpi_stop.eq(1),
+                    ]
+                    m.next = 'STOPPING'
+
+            with m.State('STOPPING'):
+                m.d.usb += self.ulpi_stop.eq(0)
+
+                # Check again for interruption since DIR may have
+                # been asserted during the previous cycle.
+                with m.If(self.ulpi_dir):
+                    m.next = 'START_WRITE'
+                    m.d.usb += self.ulpi_out_req.eq(0)
+
+                with m.Else():
+                    m.d.usb += [
+                        self.ulpi_out_req.eq(0),
                         self.done.eq(1)
                     ]
                     m.next = 'IDLE'

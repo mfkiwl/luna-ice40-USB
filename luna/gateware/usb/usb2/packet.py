@@ -11,8 +11,8 @@ import operator
 import unittest
 import functools
 
-from nmigen            import Signal, Module, Elaboratable, Cat, Array, Const
-from nmigen.hdl.rec    import Record, DIR_FANIN, DIR_FANOUT
+from amaranth          import Signal, Module, Elaboratable, Cat, Array, Const
+from amaranth.hdl.rec  import Record, DIR_FANIN, DIR_FANOUT
 
 from .                 import USBSpeed, USBPacketID
 from ..stream          import USBInStreamInterface, USBOutStreamInterface
@@ -448,6 +448,10 @@ class USBTokenDetector(Elaboratable):
 
                             # Start our interpacket-delay timer.
                             m.d.comb += timer.start.eq(1)
+
+                        # If we don't count the token, clear the state so we don't act on following packets.
+                        with m.Else():
+                            m.d.usb += self.interface.pid.eq(0)
 
 
                 # Otherwise, if we get more data, we've received a malformed

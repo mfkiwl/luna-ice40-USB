@@ -8,8 +8,8 @@
 import operator
 from functools import reduce
 
-from nmigen import Signal, Elaboratable, Module, Cat, ClockDomain, ClockSignal, ResetSignal
-from nmigen.lib.cdc import FFSynchronizer
+from amaranth import Signal, Elaboratable, Module, Cat, ClockDomain, ClockSignal, ResetSignal
+from amaranth.lib.cdc import FFSynchronizer
 
 from luna                             import top_level_cli
 from luna.gateware.utils.cdc          import synchronize
@@ -188,7 +188,7 @@ class InteractiveSelftest(Elaboratable, ApolloSelfTestCase):
         # HyperRAM test connections.
         #
         ram_bus = platform.request('ram')
-        psram = HyperRAMInterface(bus=ram_bus)
+        psram = HyperRAMInterface(bus=ram_bus, **platform.ram_timings)
         m.submodules += psram
 
         psram_address_changed = Signal()

@@ -11,7 +11,9 @@ to your own designs; including the core :class:`USBDevice` class.
 import logging
 import unittest
 
-from nmigen                    import Signal, Module, Elaboratable, Const
+from luna                      import configure_default_logging
+
+from amaranth                  import Signal, Module, Elaboratable, Const
 from usb_protocol.types        import DescriptorTypes
 from usb_protocol.emitters     import DeviceDescriptorCollection
 
@@ -215,9 +217,6 @@ class USBDevice(Elaboratable):
         # Stores the device's current configuration. Defaults to unconfigured.
         configuration = Signal(8, reset=0)
 
-        # Stores the device's current speed (a USBSpeed value).
-        speed         = Signal(2, reset=USBSpeed.FULL)
-
 
         #
         # Internal interconnections.
@@ -269,8 +268,8 @@ class USBDevice(Elaboratable):
             data_crc.rx_valid       .eq(self.utmi.rx_valid),
 
             # Connect our state signals to our subordinate components.
-            token_detector.speed    .eq(speed),
-            timer.speed             .eq(speed)
+            token_detector.speed    .eq(self.speed),
+            timer.speed             .eq(self.speed)
         ]
 
         #
@@ -291,7 +290,7 @@ class USBDevice(Elaboratable):
             handshake_detector.detected                .connect(endpoint_collection.handshakes_in),
 
             # Device state.
-            endpoint_collection.speed                  .eq(speed),
+            endpoint_collection.speed                  .eq(self.speed),
             endpoint_collection.active_config          .eq(configuration),
             endpoint_collection.active_address         .eq(address),
 
@@ -597,14 +596,33 @@ class LongDescriptorTest(USBDeviceTest):
 
         dut.add_standard_control_endpoint(descriptors)
 
-
     @usb_domain_test_case
     def test_long_descriptor(self):
+        descriptor = self.descriptors.get_descriptor_bytes(DescriptorTypes.CONFIGURATION)
 
         # Read our configuration descriptor (no subordinates).
-        handshake, data = yield from self.get_descriptor(DescriptorTypes.CONFIGURATION, length=95)
+        handshake, data = yield from self.get_descriptor(DescriptorTypes.CONFIGURATION, length=len(descriptor))
         self.assertEqual(handshake, USBPacketID.ACK)
-        self.assertEqual(len(data), 95)
+        self.assertEqual(bytes(data), descriptor)
+        self.assertEqual(len(data), len(descriptor))
+
+    @usb_domain_test_case
+    def test_descriptor_zlp(self):
+        # Try requesting a long descriptor, but using a length that is a
+        # multiple of the endpoint's maximum packet length. This should cause
+        # the device to return some number of packets with the maximum packet
+        # length, followed by a zero-length packet to terminate the
+        # transaction.
+
+        descriptor = self.descriptors.get_descriptor_bytes(DescriptorTypes.CONFIGURATION)
+
+        # Try requesting a single and three max-sized packet.
+        for factor in [1, 3]:
+            request_length = self.max_packet_size_ep0 * factor
+            handshake, data = yield from self.get_descriptor(DescriptorTypes.CONFIGURATION, length=request_length)
+            self.assertEqual(handshake, USBPacketID.ACK)
+            self.assertEqual(bytes(data), descriptor[0:request_length])
+            self.assertEqual(len(data), request_length)
 
 
 #
@@ -702,6 +720,10 @@ try:
 
 
 except ImportError as e:
+    # Since this exception happens so early, top_level_cli won't have set up logging yet,
+    # so call the setup here to avoid getting stuck with Python's default config.
+    configure_default_logging()
+
     logging.warning("SoC framework components could not be imported; some functionality will be unavailable.")
     logging.warning(e)
 

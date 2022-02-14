@@ -11,8 +11,8 @@ import logging
 import importlib
 import importlib.util
 
-from nmigen import Record
-from nmigen.vendor.lattice_ecp5 import LatticeECP5Platform
+from amaranth import Record
+from amaranth.vendor.lattice_ecp5 import LatticeECP5Platform
 
 from .luna_r0_1 import LUNAPlatformRev0D1
 from .luna_r0_2 import LUNAPlatformRev0D2
@@ -92,6 +92,11 @@ def get_appropriate_platform() -> LatticeECP5Platform:
         # only works if we're programming a connected device; otherwise, we'll
         # need to use the custom-platform environment variables.)
         platform.device = debugger.get_fpga_type()
+
+        # Explicitly close the debugger connection, as Windows doesn't allow you to
+        # re-claim the USB device if it's still open.
+        debugger.close()
+
         return platform
 
 
