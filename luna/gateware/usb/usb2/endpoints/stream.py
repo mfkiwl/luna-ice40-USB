@@ -27,6 +27,10 @@ class USBStreamInEndpoint(Elaboratable):
     a short data packet. If the stream's ``last`` signal is tied to zero, then a continuous stream of
     maximum-length-packets will be sent with no inserted ZLPs.
 
+    The ``flush`` input may be asserted to to cause all pending data to be transmitted as soon as
+    possible. When ``flush`` is asserted, packets of varying length will be sent as needed, according
+    to the data available.
+
     This implementation is double buffered; and can store a single packets worth of data while transmitting
     a second packet.
 
@@ -35,6 +39,9 @@ class USBStreamInEndpoint(Elaboratable):
     ----------
     stream: StreamInterface, input stream
         Full-featured stream interface that carries the data we'll transmit to the host.
+
+    flush: Signal(), input
+        Assert to cause all pending data to be transmitted as soon as possible.
 
     interface: EndpointInterface
         Communications link to our USB device.
@@ -60,6 +67,7 @@ class USBStreamInEndpoint(Elaboratable):
         #
         self.stream    = StreamInterface()
         self.interface = EndpointInterface()
+        self.flush     = Signal()
 
 
     def elaborate(self, platform):
@@ -77,8 +85,9 @@ class USBStreamInEndpoint(Elaboratable):
             # We want to handle packets only that target our endpoint number.
             tx_manager.active           .eq(interface.tokenizer.endpoint == self._endpoint_number),
 
-            # Connect up our transfer manager to our input stream...
+            # Connect up our transfer manager to our input stream and flush control...
             tx_manager.transfer_stream  .stream_eq(self.stream),
+            tx_manager.flush            .eq(self.flush),
 
             # ... and our output stream...
             interface.tx                .stream_eq(tx_manager.packet_stream),
@@ -329,7 +338,9 @@ class USBStreamOutEndpoint(Elaboratable):
         ping_response_requested  = endpoint_number_matches & tokenizer.is_ping & tokenizer.ready_for_response
         data_response_requested  = targeting_endpoint & tokenizer.is_out & interface.rx_ready_for_response
 
-        okay_to_receive          = targeting_endpoint & expected_pid_match & ~overflow
+        okay_to_receive          = targeting_endpoint & expected_pid_match
+        data_is_lost             = okay_to_receive & rx.next & rx.valid & fifo.full
+        data_accepted            = okay_to_receive & ~data_is_lost & ~overflow
         should_skip              = targeting_endpoint & ~expected_pid_match
 
         full_packet              = rx_cnt == self._max_packet_size - 1
@@ -341,7 +352,7 @@ class USBStreamOutEndpoint(Elaboratable):
             fifo.write_data[0:8] .eq(rx.payload),
             fifo.write_data[8]   .eq(rx_last & ~full_packet),
             fifo.write_data[9]   .eq(rx_first & ~transfer_active),
-            fifo.write_en        .eq(okay_to_receive & rx.next & rx.valid),
+            fifo.write_en        .eq(okay_to_receive & rx.next & rx.valid & ~fifo.full),
 
             # We'll keep data if our packet finishes with a valid CRC and no overflow; and discard it otherwise.
             fifo.write_commit    .eq(targeting_endpoint & boundary_detector.complete_out & ~overflow),
@@ -351,14 +362,14 @@ class USBStreamOutEndpoint(Elaboratable):
             # due to a PID sequence mismatch. If we get a PID sequence mismatch, we assume that
             # we missed a previous ACK from the host; and ACK without accepting data [USB 2.0: 8.6.3].
             interface.handshakes_out.ack  .eq(
-                (data_response_requested & okay_to_receive) |
+                (data_response_requested & data_accepted) |
                 (ping_response_requested & sufficient_space) |
                 (data_response_requested & should_skip)
             ),
 
             # We'll NAK any time we want to accept a packet, but we don't have enough room.
             interface.handshakes_out.nak  .eq(
-                (data_response_requested & ~okay_to_receive & ~should_skip) |
+                (data_response_requested & ~data_accepted & ~should_skip) |
                 (ping_response_requested & ~sufficient_space)
             ),
 
@@ -386,16 +397,16 @@ class USBStreamOutEndpoint(Elaboratable):
                 m.d.usb += transfer_active.eq(full_packet)
 
         # We'll set the overflow flag if we're receiving data we don't have room for.
-        with m.If(fifo.write_en & fifo.full):
+        with m.If(data_is_lost):
             m.d.usb += overflow.eq(1)
 
         # We'll clear the overflow flag and byte counter when the packet is done.
-        with m.If(data_response_requested):
+        with m.Elif(fifo.write_commit | fifo.write_discard):
             m.d.usb += overflow.eq(0)
             m.d.usb += rx_cnt.eq(0)
 
         # We'll toggle our DATA PID each time we issue an ACK to the host [USB 2.0: 8.6.2].
-        with m.If(data_response_requested & okay_to_receive):
+        with m.If(data_response_requested & data_accepted):
             m.d.usb += expected_data_toggle.eq(~expected_data_toggle)
 
 

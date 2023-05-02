@@ -25,7 +25,7 @@ def configure_default_logging(level=logging.INFO, logger=logging):
     else:
         log_format = LOG_FORMAT_PLAIN
 
-    logger.basicConfig(level=logging.INFO, format=log_format)
+    logger.basicConfig(level=level, format=log_format)
 
 
 def top_level_cli(fragment, *pos_args, cli_soc=None, **kwargs):
@@ -134,6 +134,12 @@ def top_level_cli(fragment, *pos_args, cli_soc=None, **kwargs):
         join_text = "and uploading gateware to attached" if args.upload else "for"
         logging.info(f"Building {join_text} {platform.name}...")
 
+        # TODO fix litex build
+        thirdparty = os.path.join(build_dir, "soc/lambdasoc.soc.cpu/bios/3rdparty/litex")
+        if not os.path.exists(thirdparty):
+            logging.info("Fixing build, creating output directory: {}".format(thirdparty))
+            os.makedirs(thirdparty)
+
         # If we have an SoC, allow it to perform any pre-elaboration steps it wants.
         # This allows it to e.g. build a BIOS or equivalent firmware.
         if cli_soc and hasattr(cli_soc, 'build'):
@@ -181,5 +187,3 @@ def top_level_cli(fragment, *pos_args, cli_soc=None, **kwargs):
             shutil.rmtree(build_dir)
 
     return None
-
-
