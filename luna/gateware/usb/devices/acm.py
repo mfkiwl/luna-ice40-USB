@@ -46,6 +46,9 @@ class ACMRequestHandlers(USBRequestHandler):
                 # encoding. Since we output a stream, we'll ignore the actual line coding.
                 with m.Case(self.SET_LINE_CODING):
 
+                    # Drive interface outputs for this request
+                    m.d.comb += interface.claim.eq(1)
+
                     # Always ACK the data out...
                     with m.If(interface.rx_ready_for_response):
                         m.d.comb += interface.handshakes_out.ack.eq(1)
@@ -54,16 +57,7 @@ class ACMRequestHandlers(USBRequestHandler):
                     with m.If(interface.status_requested):
                         m.d.comb += self.send_zlp()
 
-
-                with m.Case():
-
-                    #
-                    # Stall unhandled requests.
-                    #
-                    with m.If(interface.status_requested | interface.data_requested):
-                        m.d.comb += interface.handshakes_out.stall.eq(1)
-
-                return m
+        return m
 
 
 class USBSerialDevice(Elaboratable):
@@ -108,7 +102,7 @@ class USBSerialDevice(Elaboratable):
     def __init__(self, *, bus, idVendor, idProduct,
             manufacturer_string="LUNA",
             product_string="USB-to-serial",
-            serial_number=None, max_packet_size=64):
+            serial_number="", max_packet_size=64):
 
         self._bus                 = bus
         self._idVendor            = idVendor
@@ -245,4 +239,3 @@ class USBSerialDevice(Elaboratable):
         ]
 
         return m
-

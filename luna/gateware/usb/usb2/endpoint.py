@@ -9,11 +9,11 @@
 import functools
 import operator
 
-from amaranth         import Signal, Elaboratable, Module
-from amaranth.hdl.ast import Past
+from amaranth         import Signal, Elaboratable, Module, Cat
 
 from .packet          import DataCRCInterface, InterpacketTimerInterface, TokenDetectorInterface
 from .packet          import HandshakeExchangeInterface
+from .request         import ClearEndpointHaltInterface
 from ..stream         import USBInStreamInterface, USBOutStreamInterface
 from ...utils.bus     import OneHotMultiplexer
 
@@ -90,6 +90,9 @@ class EndpointInterface:
         self.active_config         = Signal(8)
         self.config_changed        = Signal()
         self.new_config            = Signal(8)
+
+        self.clear_endpoint_halt_out = Signal(ClearEndpointHaltInterface)
+        self.clear_endpoint_halt_in  = Signal(ClearEndpointHaltInterface)
 
         self.rx                    = USBOutStreamInterface()
         self.rx_complete           = Signal()
@@ -214,6 +217,8 @@ class USBEndpointMultiplexer(Elaboratable):
                 shared.handshakes_in             .connect(interface.handshakes_in),
                 shared.tokenizer                 .connect(interface.tokenizer),
 
+                interface.clear_endpoint_halt_in .eq(shared.clear_endpoint_halt_out),
+
                 # Rx interface.
                 shared.rx                        .connect(interface.rx),
                 interface.rx_complete            .eq(shared.rx_complete),
@@ -260,12 +265,18 @@ class USBEndpointMultiplexer(Elaboratable):
         # ... and our timer start signals.
         self.or_join_interface_signals(m, lambda interface : interface.timer.start)
 
+        self.or_join_interface_signals(m, lambda interface : interface.clear_endpoint_halt_out.enable)
+        self.or_join_interface_signals(m, lambda interface : interface.clear_endpoint_halt_out.direction)
+        self.or_join_interface_signals(m, lambda interface : interface.clear_endpoint_halt_out.number)
+
         # Finally, connect up our transmit PID select.
         conditional = m.If
 
         # We'll connect our PID toggle to whichever interface has a valid transmission going.
-        for interface in self._interfaces:
-            with conditional(interface.tx.valid | Past(interface.tx.valid, domain="usb")):
+        past_valid  = Signal(len(self._interfaces))
+        m.d.usb    += past_valid.eq(Cat(interface.tx.valid for interface in self._interfaces))
+        for i, interface in enumerate(self._interfaces):
+            with conditional(interface.tx.valid | past_valid[i]):
                 m.d.comb += shared.tx_pid_toggle.eq(interface.tx_pid_toggle)
 
             conditional = m.Elif

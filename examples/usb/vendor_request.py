@@ -2,7 +2,7 @@
 #
 # This file is part of LUNA.
 #
-# Copyright (c) 2020 Great Scott Gadgets <info@greatscottgadgets.com>
+# Copyright (c) 2020-2024 Great Scott Gadgets <info@greatscottgadgets.com>
 # SPDX-License-Identifier: BSD-3-Clause
 
 from amaranth                       import Elaboratable, Module, Cat
@@ -39,6 +39,9 @@ class LEDRequestHandler(USBRequestHandler):
                 # to a user provided value
                 with m.Case(self.REQUEST_SET_LEDS):
 
+                    # Drive interface outputs for this request
+                    m.d.comb += interface.claim.eq(1)
+
                     # If we have an active data byte, splat it onto the LEDs.
                     #
                     # For simplicity of this example, we'll accept any byte in
@@ -56,16 +59,7 @@ class LEDRequestHandler(USBRequestHandler):
                     with m.If(interface.status_requested):
                         m.d.comb += self.send_zlp()
 
-
-                with m.Case():
-
-                    #
-                    # Stall unhandled requests.
-                    #
-                    with m.If(interface.status_requested | interface.data_requested):
-                        m.d.comb += interface.handshakes_out.stall.eq(1)
-
-                return m
+        return m
 
 
 
@@ -87,8 +81,8 @@ class USBVendorDeviceExample(Elaboratable):
 
         # We'll need a device descriptor...
         with descriptors.DeviceDescriptor() as d:
-            d.idVendor           = 0x16d0
-            d.idProduct          = 0xf3b
+            d.idVendor           = 0x1209
+            d.idProduct          = 0x0001
 
             d.iManufacturer      = "LUNA"
             d.iProduct           = "Fancy USB-Controlled LEDs"
